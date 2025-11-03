@@ -40,7 +40,7 @@ def plot_strategy_overview(
 
     # Primary axis: price and SMA
     ax1.plot(subset.index, subset[price_col], label="Mid Price", color="blue", linewidth=1.2)
-    ax1.plot(subset.index, subset[sma_col], label="10 period SMA", color="orange", linewidth=1.5)
+    ax1.plot(subset.index, subset[sma_col], label="SMA", color="orange", linewidth=1.5)
 
     # Signals
     long_signals = subset[subset[signal_col] == 1]
