@@ -5,7 +5,7 @@ def plot_strategy_overview(
     df,
     n_points=200,
     price_col="mid_price",
-    sma_col="sma_10",
+    sma_col="sma",
     signal_col="signal",
     position_col="position",
     equity_col="equity",
@@ -95,7 +95,7 @@ def plot_strategy_overview_multi(
     equities: dict,
     n_points: int = 200,
     price_col: str = "mid_price",
-    sma_col: str = "sma_10",
+    sma_col: str = "sma",
     signal_col: str = "signal",
     position_col: str = "position",
     title: str = None,
@@ -176,3 +176,57 @@ def plot_strategy_overview_multi(
     plt.tight_layout()
     plt.show()
     return fig, ax1, ax2
+
+
+def plot_equity_curves(
+    equities: dict,
+    n_points: int = None,
+    title: str = "Equity Curve Comparison",
+    start_capital: float = 100_000.0
+):
+    """
+    Plot multiple equity curves (e.g., from different SMA strategies).
+
+    Parameters
+    ----------
+    equities : dict[str, pd.Series]
+        Mapping of label -> equity series (must have aligned datetime index).
+    n_points : int or None
+        Number of points from the start to plot. If None, show all.
+    title : str
+        Plot title.
+    start_capital : float
+        Optional reference line for starting equity.
+    """
+
+    if not equities:
+        raise ValueError("No equity curves provided")
+
+    # Choose an index for consistent plotting (use the first series)
+    ref_series = next(iter(equities.values()))
+    if n_points:
+        ref_series = ref_series.iloc[:n_points]
+        x_index = ref_series.index
+    else:
+        x_index = ref_series.index
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    for label, series in equities.items():
+        s = series.reindex(x_index)
+        if n_points:
+            s = s.iloc[:n_points]
+        ax.plot(s.index, s.values, label=label, linewidth=1.8)
+
+    # Reference line for starting capital
+    ax.axhline(start_capital, linestyle="--", color="gray", linewidth=1, label="Initial capital")
+
+    ax.set_title(title)
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Equity (USD)")
+    ax.legend(loc="upper left")
+    ax.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    return fig, ax

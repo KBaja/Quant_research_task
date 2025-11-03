@@ -1,14 +1,17 @@
 import numpy as np
 import pandas as pd
 
+
+
 def backtest_strategy(
     df,
-    sma_col="sma_10",
+    sma_col="sma",
     price_col="mid_price",
     signal_col="signal",
     initial_capital=100_000.0,
     allow_short_enter=False,
-    transaction_cost_pct=0.0002  # 0.02% per side
+    transaction_cost_pct=0.0002,  # 0.02% per side
+    verbose=True
 ):
     """
     Simulate the SMA strategy with optional control of the first entry side and
@@ -97,17 +100,104 @@ def backtest_strategy(
         sharpe = np.nan
     else:
         sharpe = float((mu / sigma) * np.sqrt(minutes_per_year))
+        
+    metrics = {
+        "final_equity": df["equity"].iloc[-1],
+        "total_return_pct": total_return_pct,
+        "max_drawdown_pct": max_drawdown_pct,
+        "trades": trades,
+        "sharpe": sharpe
+    }
+    if verbose:
+        print("Simulation")
+        print(f"Initial capital: ${initial_capital:,.2f}")
+        print(f"Allow short enter: {allow_short_enter}")
+        print(f"Transaction cost per side: {transaction_cost_pct*100:.4f}%")
+        print("Results")
+        print("------")
+        print(f"Final equity: ${df['equity'].iloc[-1]:,.2f}")
+        print(f"Total return: {total_return_pct:.2f}%")
+        print(f"Max drawdown: {max_drawdown_pct:.2f}%")
+        print(f"Number of trades: {trades}")
+        print(f"Sharpe ratio: {sharpe}")
 
-    print("Simulation")
-    print(f"Initial capital: ${initial_capital:,.2f}")
-    print(f"Allow short enter: {allow_short_enter}")
-    print(f"Transaction cost per side: {transaction_cost_pct*100:.4f}%")
-    print("Results")
-    print("------")
-    print(f"Final equity: ${df['equity'].iloc[-1]:,.2f}")
-    print(f"Total return: {total_return_pct:.2f}%")
-    print(f"Max drawdown: {max_drawdown_pct:.2f}%")
-    print(f"Number of trades: {trades}")
-    print(f"Sharpe ratio: {sharpe}")
+    return df, metrics
 
-    return df
+
+def compute_sma_signal(df, window):
+    """Compute SMA and a price vs SMA signal on a copy, then return it."""
+    out = df.copy()
+    out["sma"] = out["mid_price"].rolling(window=window).mean()
+    out["signal"] = 0
+    out.loc[out["mid_price"] > out["sma"], "signal"] = 1
+    out.loc[out["mid_price"] < out["sma"], "signal"] = -1
+    return out
+
+def run_sma_sweep(
+    df,
+    sma_periods=[5, 10, 20, 50],
+    initial_capital=100_000.0,
+    transaction_cost_pct=0.0002,
+    allow_short_enter=False,
+    backtest_func=None,
+    price_col="mid_price",
+    verbose=False,
+):
+    """
+    Run multiple back tests over a set of SMA periods.
+    Assumes `backtest_func` returns (df_result, metrics_dict).
+
+    Returns
+    -------
+    metrics_df : pd.DataFrame
+        One row per SMA period with final equity, total return, drawdown, Sharpe, and trades.
+    results_by_period : dict[int, pd.DataFrame]
+        Mapping from period to the full result dataframe of that run.
+    equities : dict[str, pd.Series]
+        Mapping from legend label to equity series, ready for plotting.
+    """
+    assert backtest_func is not None, "Please pass your backtest function via backtest_func"
+
+    rows = []
+    results_by_period = {}
+    equities = {}
+
+    for period in sma_periods:
+        # period must be integer
+        period = int(period)
+        # prepare data for this period
+        df_period = compute_sma_signal(df, window=period)
+
+        # run back test
+        df_res, metrics = backtest_func(
+            df_period,
+            sma_col="sma",
+            price_col=price_col,
+            signal_col="signal",
+            initial_capital=initial_capital,
+            allow_short_enter=allow_short_enter,
+            transaction_cost_pct=transaction_cost_pct,
+            verbose=verbose
+        )
+
+        # collect metrics with safe defaults
+        final_equity = metrics.get("final_equity", float(df_res["equity"].iloc[-1]))
+        total_return_pct = metrics.get("total_return_pct", None)
+        max_drawdown_pct = metrics.get("max_drawdown_pct", None)
+        sharpe = metrics.get("sharpe", None)
+        num_trades = metrics.get("num_trades", metrics.get("trades", None))
+
+        rows.append({
+            "period": int(period),
+            "final_equity": final_equity,
+            "total_return_pct": total_return_pct,
+            "max_drawdown_pct": max_drawdown_pct,
+            "sharpe": sharpe,
+            "num_trades": num_trades,
+        })
+
+        results_by_period[int(period)] = df_res
+        equities[f"SMA {period}"] = df_res["equity"]
+
+    metrics_df = pd.DataFrame(rows).set_index("period").sort_values("total_return_pct", ascending=False)
+    return metrics_df, results_by_period, equities
